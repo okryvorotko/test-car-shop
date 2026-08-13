@@ -1,0 +1,27 @@
+{
+  "name": "test-car-shop",
+  "version": "1.0.0",
+  "description": "API and UI automation framework for car-shop-demo.",
+  "type": "module",
+  "scripts": {
+    "test": "npm run test:api && npm run test:ui",
+    "test:api": "mocha \"tests/api/**/*.spec.js\" --timeout 15000",
+    "test:api:watch": "mocha \"tests/api/**/*.spec.js\" --timeout 15000 --watch",
+    "test:ui": "playwright test",
+    "test:ui:headed": "playwright test --headed",
+    "test:ui:debug": "playwright test --debug",
+    "report:ui": "playwright show-report"
+  },
+  "keywords": [
+    "api-testing",
+    "playwright",
+    "mocha",
+    "car-shop-demo"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "mocha": "^11.7.4"
+  }
+}
