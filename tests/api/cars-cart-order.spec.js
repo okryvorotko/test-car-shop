@@ -12,6 +12,7 @@ describe("Cars, cart, and order APIs", function () {
   });
 
   beforeEach(async function () {
+    await cleanupDemoData();
     token = await api.register(uniqueUser());
   });
 

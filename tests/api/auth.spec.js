@@ -8,6 +8,10 @@ describe("Auth API", function () {
     await ensureApiIsReady();
   });
 
+  beforeEach(async function () {
+    await cleanupDemoData();
+  });
+
   afterEach(async function () {
     await cleanupDemoData();
   });
