@@ -235,7 +235,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      contents: read
+      contents: write
       pages: write
       id-token: write
     environment:
@@ -283,10 +283,40 @@ jobs:
       - name: Generate Allure HTML report
         run: npm run report:allure
 
+      - name: Restore previously published reports
+        id: history
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: git clone --depth 1 --branch gh-pages "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" pages-site
+
+      - name: Initialize report history
+        if: steps.history.outcome == 'failure'
+        shell: bash
+        run: |
+          mkdir -p pages-site
+          git -C pages-site init --initial-branch=gh-pages
+
+      - name: Add this run to the report history
+        run: node scripts/build-pages-history.mjs allure-report allure-results pages-site
+
+      - name: Save report history
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          git -C pages-site config user.name github-actions[bot]
+          git -C pages-site config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git -C pages-site add .
+          git -C pages-site commit -m "Publish test report for run $GITHUB_RUN_NUMBER (attempt $GITHUB_RUN_ATTEMPT)"
+          git -C pages-site push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:gh-pages
+          rsync -a --exclude=.git pages-site/ pages-public/
+
       - name: Upload report for GitHub Pages
         uses: actions/upload-pages-artifact@v5
         with:
-          path: allure-report
+          path: pages-public
           retention-days: 1
 
       - name: Upload Allure report
@@ -311,7 +341,7 @@ jobs:
           {
             echo "## Test report"
             echo
-            echo "[Open the latest test report](${{ steps.deployment.outputs.page_url }})"
+            echo "[Open test report history](${{ steps.deployment.outputs.page_url }})"
             echo
             echo "[Download the Allure HTML report](${{ steps.allure_artifact.outputs.artifact-url }})"
           } >> "$GITHUB_STEP_SUMMARY"

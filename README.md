@@ -43,16 +43,18 @@ npm run report:allure:open
 ```
 
 In GitHub Actions, open the completed workflow run and follow the report link in
-the **Publish Allure report** job summary to open the latest report directly on
-GitHub Pages. Each run is also retained as a downloadable artifact for seven
-days; extract that artifact into the repository and serve it with
-`npm run report:allure:open`.
+the **Generate report** job summary. GitHub Pages opens a report-history page
+with the pass, fail, broken, and skipped totals for every published run. Select
+**Open report** on any run to view its complete Allure report. Each run is also
+retained as a downloadable artifact for seven days; extract that artifact into
+the repository and serve it with `npm run report:allure:open`.
 
 Before the first publication, set **Settings > Pages > Build and deployment >
-Source** to **GitHub Actions**. The Pages deployment replaces the site with the
-latest completed report. Be aware that Pages visibility depends on the GitHub
-plan and repository settings; failure screenshots and test details may be
-publicly accessible.
+Source** to **GitHub Actions**. Published reports are archived on the generated
+`gh-pages` branch and redeployed together, so deleting that branch also deletes
+the report history on the next publication. Be aware that Pages visibility
+depends on the GitHub plan and repository settings; failure screenshots and test
+details may be publicly accessible.
 
 To verify failure diagnostics, run the workflow manually and enable **Run one
 intentionally failing UI test to verify report artifacts**. The opt-in demo test
