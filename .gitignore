@@ -2,6 +2,8 @@
 .idea
 node_modules/
 playwright-report/
+allure-results/
+allure-report/
 test-results/
 /test-results/
 .terraform/
@@ -9,3 +11,4 @@ test-results/
 *.tfstate.*
 *.tfplan
 crash.log
+.npm-cache/

@@ -5,12 +5,13 @@
   "type": "module",
   "scripts": {
     "test": "npm run test:api && npm run test:ui",
-    "test:api": "mocha \"tests/api/**/*.spec.js\" --timeout 15000",
+    "test:api": "mocha \"tests/api/**/*.spec.js\" --timeout 15000 --reporter allure-mocha",
     "test:api:watch": "mocha \"tests/api/**/*.spec.js\" --timeout 15000 --watch",
     "test:ui": "playwright test",
     "test:ui:headed": "playwright test --headed",
     "test:ui:debug": "playwright test --debug",
-    "report:ui": "playwright show-report"
+    "report:allure": "allure generate allure-results --clean --output allure-report",
+    "report:allure:open": "allure open allure-report"
   },
   "keywords": [
     "api-testing",
@@ -22,6 +23,9 @@
   "license": "MIT",
   "devDependencies": {
     "@playwright/test": "^1.56.0",
+    "allure-commandline": "^2.43.0",
+    "allure-mocha": "^3.10.2",
+    "allure-playwright": "^3.10.2",
     "mocha": "^11.7.4"
   }
 }

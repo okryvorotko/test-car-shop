@@ -10,7 +10,7 @@ export default defineConfig({
   fullyParallel: false,
   reporter: [
     ["list"],
-    ["html", { open: "never" }]
+    ["allure-playwright", { resultsDir: "allure-results" }]
   ],
   use: {
     baseURL: config.uiBaseUrl,

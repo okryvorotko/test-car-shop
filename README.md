@@ -29,6 +29,24 @@ npm run test:ui
 npm test
 ```
 
+## Allure test report
+
+Both Mocha API tests and Playwright UI tests write results to one Allure report.
+Playwright screenshots, videos, and traces are retained and attached when a UI
+test fails.
+
+Generate and open the report locally after running tests:
+
+```bash
+npm run report:allure
+npm run report:allure:open
+```
+
+In GitHub Actions, open the completed workflow run and follow the report link in
+the job summary. Download and extract the artifact into the repository, then
+serve it with `npm run report:allure:open` (Allure reports should be opened
+through its local web server). Reports are retained for seven days.
+
 ## Temporary AWS environment
 
 The `AWS deployment tests` GitHub Actions workflow creates a temporary Ubuntu

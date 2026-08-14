@@ -77,24 +77,74 @@ jobs:
       - name: Install test dependencies
         run: npm ci
 
+      - name: Set up Java for Allure
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: Run API and UI tests
+      - name: Run API tests
+        id: api_tests
+        continue-on-error: true
         env:
           TEST_PASSWORD: ${{ secrets.TEST_PASSWORD || 'TestPassword123!' }}
-        run: npm test
+        run: npm run test:api
 
-      - name: Upload Playwright diagnostics
-        if: always()
+      - name: Run UI tests
+        id: ui_tests
+        if: always() && steps.api_tests.outcome != 'skipped'
+        continue-on-error: true
+        env:
+          TEST_PASSWORD: ${{ secrets.TEST_PASSWORD || 'TestPassword123!' }}
+        run: npm run test:ui
+
+      - name: Add report environment
+        if: always() && steps.api_tests.outcome != 'skipped'
+        shell: bash
+        run: |
+          mkdir -p allure-results
+          {
+            echo "Application.ref=$TF_VAR_app_ref"
+            echo "AWS.region=$TF_VAR_aws_region"
+            echo "Browser=Chromium"
+            echo "GitHub.run=$GITHUB_RUN_NUMBER"
+          } > allure-results/environment.properties
+
+      - name: Generate Allure HTML report
+        if: always() && steps.api_tests.outcome != 'skipped'
+        run: npm run report:allure
+
+      - name: Upload Allure report
+        id: allure_artifact
+        if: always() && steps.api_tests.outcome != 'skipped'
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-results-${{ github.run_id }}
+          name: allure-report-${{ github.run_id }}
           path: |
-            playwright-report/
+            allure-report/
+            allure-results/
             test-results/
           if-no-files-found: ignore
           retention-days: 7
+
+      - name: Add report link to job summary
+        if: always() && steps.allure_artifact.outputs.artifact-url != ''
+        shell: bash
+        run: |
+          {
+            echo "## Test report"
+            echo
+            echo "[Download the Allure HTML report](${{ steps.allure_artifact.outputs.artifact-url }})"
+            echo
+            echo "Download and extract the artifact, then run \`npx allure open allure-report\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail workflow when tests failed
+        if: always() && (steps.api_tests.outcome == 'failure' || steps.ui_tests.outcome == 'failure')
+        run: exit 1
 
       - name: Destroy AWS infrastructure
         if: always()
