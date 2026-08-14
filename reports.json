@@ -1,0 +1,19 @@
+[
+  {
+    "id": "run-9-attempt-1",
+    "runNumber": 9,
+    "runAttempt": 1,
+    "createdAt": "2026-08-14T07:02:00.089Z",
+    "ref": "master",
+    "sha": "280f6f2",
+    "workflowUrl": "https://github.com/okryvorotko/test-car-shop/actions/runs/31778075280",
+    "reportUrl": "reports/run-9-attempt-1/index.html",
+    "summary": {
+      "passed": 10,
+      "failed": 1,
+      "broken": 0,
+      "skipped": 0,
+      "unknown": 0
+    }
+  }
+]

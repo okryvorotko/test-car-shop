@@ -1,0 +1,8 @@
+[failure-demo] Creating a user, then logging in through the UI.
+[browser:debug] [vite] connecting...
+[browser:debug] [vite] connected.
+[browser:info] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[failure-demo] Filtering the catalog for Lucid Air.
+[failure-demo] Opening Lucid Air and adding it to the cart.
+[failure-demo] Verifying the cart before the intentional failure.
+[failure-demo] The shopping flow is complete; running the expected failure now.
