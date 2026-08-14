@@ -30,6 +30,7 @@ reports.unshift({
   id: reportId,
   runNumber: Number(runNumber),
   runAttempt: Number(runAttempt),
+  workflowName: process.env.GITHUB_WORKFLOW,
   createdAt: new Date().toISOString(),
   ref: process.env.TF_VAR_app_ref,
   sha: process.env.GITHUB_SHA?.slice(0, 7),
@@ -60,7 +61,7 @@ const cards = reports.map((report) => {
   return `
     <article class="report ${outcome}">
       <div>
-        <h2><a href="${escapeHtml(report.reportUrl)}">Run #${report.runNumber}</a></h2>
+        <h2><a href="${escapeHtml(report.reportUrl)}">Run #${report.runNumber}</a>${report.workflowName ? ` <span class="workflow-name">${escapeHtml(report.workflowName)}</span>` : ""}</h2>
         <p>${escapeHtml(date)} UTC · attempt ${report.runAttempt} · app ref ${escapeHtml(report.ref)} · ${escapeHtml(report.sha)}</p>
       </div>
       <div class="summary" aria-label="Test summary">
