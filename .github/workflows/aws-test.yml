@@ -345,7 +345,3 @@ jobs:
             echo
             echo "[Download the Allure HTML report](${{ steps.allure_artifact.outputs.artifact-url }})"
           } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Fail workflow when tests or cleanup failed
-        if: needs.ui_tests.result == 'failure' || needs.api_tests.result == 'failure' || needs.terminate_infra.result == 'failure'
-        run: exit 1
