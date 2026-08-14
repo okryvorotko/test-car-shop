@@ -17,23 +17,25 @@ permissions:
   contents: read
 
 concurrency:
-  # Serialize every infrastructure run in this repository. A later run waits
-  # instead of touching AWS while an earlier Terraform state is still active.
+  # Serialize infrastructure runs because Terraform state is passed between jobs.
   group: aws-test-${{ github.repository }}
   cancel-in-progress: false
 
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_VAR_aws_region: ${{ vars.AWS_REGION || 'us-east-1' }}
+  TF_VAR_run_id: ${{ github.run_id }}-${{ github.run_attempt }}
+  TF_VAR_app_ref: ${{ inputs.app_ref || 'master' }}
+  RUN_FAILURE_DEMO: ${{ inputs.run_failure_demo || 'false' }}
+
 jobs:
-  deploy-test-destroy:
+  prepare_infra:
+    name: Prepare infra
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     outputs:
-      pages_artifact_id: ${{ steps.pages_artifact.outputs.artifact_id }}
-    env:
-      TF_IN_AUTOMATION: "true"
-      TF_VAR_aws_region: ${{ vars.AWS_REGION || 'us-east-1' }}
-      TF_VAR_run_id: ${{ github.run_id }}-${{ github.run_attempt }}
-      TF_VAR_app_ref: ${{ inputs.app_ref || 'master' }}
-      RUN_FAILURE_DEMO: ${{ inputs.run_failure_demo || 'false' }}
+      ui_base_url: ${{ steps.urls.outputs.ui_base_url }}
+      api_base_url: ${{ steps.urls.outputs.api_base_url }}
 
     steps:
       - name: Check out test framework
@@ -60,16 +62,34 @@ jobs:
         run: terraform validate
 
       - name: Deploy application
+        id: deploy
+        continue-on-error: true
         working-directory: terraform
         run: terraform apply -auto-approve
 
-      - name: Read deployment URLs
+      - name: Save deployment URLs
+        id: urls
+        if: steps.deploy.outcome == 'success'
         working-directory: terraform
+        shell: bash
         run: |
-          echo "UI_BASE_URL=$(terraform output -raw ui_url)" >> "$GITHUB_ENV"
-          echo "API_BASE_URL=$(terraform output -raw api_url)" >> "$GITHUB_ENV"
+          echo "ui_base_url=$(terraform output -raw ui_url)" >> "$GITHUB_OUTPUT"
+          echo "api_base_url=$(terraform output -raw api_url)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Terraform state
+        if: always() && hashFiles('terraform/terraform.tfstate') != ''
+        uses: actions/upload-artifact@v6
+        with:
+          name: terraform-state-${{ github.run_id }}
+          path: terraform/terraform.tfstate
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Wait for application
+        if: steps.deploy.outcome == 'success'
+        env:
+          UI_BASE_URL: ${{ steps.urls.outputs.ui_base_url }}
+          API_BASE_URL: ${{ steps.urls.outputs.api_base_url }}
         run: |
           for attempt in {1..60}; do
             if curl --fail --silent --show-error --max-time 5 "$API_BASE_URL/ping" >/dev/null && curl --fail --silent --show-error --max-time 5 "$UI_BASE_URL" >/dev/null; then
@@ -82,6 +102,150 @@ jobs:
           echo "Application did not become ready in 10 minutes" >&2
           exit 1
 
+      - name: Fail when deployment failed
+        if: steps.deploy.outcome == 'failure'
+        run: exit 1
+
+  ui_tests:
+    name: Running UI tests
+    needs: prepare_infra
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out test framework
+        uses: actions/checkout@v5
+
+      - name: Install test dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run UI tests
+        id: tests
+        continue-on-error: true
+        env:
+          UI_BASE_URL: ${{ needs.prepare_infra.outputs.ui_base_url }}
+          API_BASE_URL: ${{ needs.prepare_infra.outputs.api_base_url }}
+          TEST_PASSWORD: ${{ secrets.TEST_PASSWORD || 'TestPassword123!' }}
+        run: npm run test:ui
+
+      - name: Upload UI test results
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: ui-test-results-${{ github.run_id }}
+          path: |
+            allure-results/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 1
+
+      - name: Fail job when UI tests failed
+        if: steps.tests.outcome == 'failure'
+        run: exit 1
+
+  api_tests:
+    name: Running API tests
+    needs: prepare_infra
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out test framework
+        uses: actions/checkout@v5
+
+      - name: Install test dependencies
+        run: npm ci
+
+      - name: Run API tests
+        id: tests
+        continue-on-error: true
+        env:
+          UI_BASE_URL: ${{ needs.prepare_infra.outputs.ui_base_url }}
+          API_BASE_URL: ${{ needs.prepare_infra.outputs.api_base_url }}
+          TEST_PASSWORD: ${{ secrets.TEST_PASSWORD || 'TestPassword123!' }}
+        run: npm run test:api
+
+      - name: Upload API test results
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: api-test-results-${{ github.run_id }}
+          path: allure-results/
+          if-no-files-found: ignore
+          retention-days: 1
+
+      - name: Fail job when API tests failed
+        if: steps.tests.outcome == 'failure'
+        run: exit 1
+
+  terminate_infra:
+    name: Terminate infra
+    needs: [prepare_infra, ui_tests, api_tests]
+    if: always() && needs.prepare_infra.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out test framework
+        uses: actions/checkout@v5
+
+      - name: Download Terraform state
+        id: state
+        continue-on-error: true
+        uses: actions/download-artifact@v6
+        with:
+          name: terraform-state-${{ github.run_id }}
+          path: terraform
+
+      - name: Configure AWS credentials
+        if: steps.state.outcome == 'success'
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.TF_VAR_aws_region }}
+
+      - name: Set up Terraform
+        if: steps.state.outcome == 'success'
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_wrapper: false
+
+      - name: Initialize Terraform
+        if: steps.state.outcome == 'success'
+        working-directory: terraform
+        run: terraform init
+
+      - name: Destroy AWS infrastructure
+        if: steps.state.outcome == 'success'
+        working-directory: terraform
+        run: terraform destroy -auto-approve
+
+      - name: Fail when Terraform state is unavailable
+        if: steps.state.outcome == 'failure' && needs.prepare_infra.result == 'success'
+        run: exit 1
+
+  generate_report:
+    name: Generate report
+    needs: [prepare_infra, ui_tests, api_tests, terminate_infra]
+    if: always() && (needs.ui_tests.result != 'skipped' || needs.api_tests.result != 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Check out test framework
+        uses: actions/checkout@v5
+
       - name: Install test dependencies
         run: npm ci
 
@@ -91,29 +255,24 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+      - name: Download test results
+        uses: actions/download-artifact@v6
+        with:
+          pattern: '*-test-results-${{ github.run_id }}'
+          path: downloaded-results
+          merge-multiple: false
 
-      - name: Run API tests
-        id: api_tests
-        continue-on-error: true
-        env:
-          TEST_PASSWORD: ${{ secrets.TEST_PASSWORD || 'TestPassword123!' }}
-        run: npm run test:api
-
-      - name: Run UI tests
-        id: ui_tests
-        if: always() && steps.api_tests.outcome != 'skipped'
-        continue-on-error: true
-        env:
-          TEST_PASSWORD: ${{ secrets.TEST_PASSWORD || 'TestPassword123!' }}
-        run: npm run test:ui
-
-      - name: Add report environment
-        if: always() && steps.api_tests.outcome != 'skipped'
+      - name: Merge Allure results
         shell: bash
         run: |
-          mkdir -p allure-results
+          mkdir -p allure-results test-results
+          find downloaded-results -type f -path '*/allure-results/*' -exec cp {} allure-results/ \;
+          if [ -d "downloaded-results/api-test-results-${{ github.run_id }}" ]; then
+            find "downloaded-results/api-test-results-${{ github.run_id }}" -maxdepth 1 -type f -exec cp {} allure-results/ \;
+          fi
+          if find downloaded-results -type f -path '*/test-results/*' -print -quit | grep -q .; then
+            cp -R downloaded-results/ui-test-results-${{ github.run_id }}/test-results/. test-results/
+          fi
           {
             echo "Application.ref=$TF_VAR_app_ref"
             echo "AWS.region=$TF_VAR_aws_region"
@@ -122,12 +281,9 @@ jobs:
           } > allure-results/environment.properties
 
       - name: Generate Allure HTML report
-        if: always() && steps.api_tests.outcome != 'skipped'
         run: npm run report:allure
 
       - name: Upload report for GitHub Pages
-        id: pages_artifact
-        if: always() && hashFiles('allure-report/index.html') != ''
         uses: actions/upload-pages-artifact@v5
         with:
           path: allure-report
@@ -135,7 +291,6 @@ jobs:
 
       - name: Upload Allure report
         id: allure_artifact
-        if: always() && steps.api_tests.outcome != 'skipped'
         uses: actions/upload-artifact@v6
         with:
           name: allure-report-${{ github.run_id }}
@@ -143,53 +298,24 @@ jobs:
             allure-report/
             allure-results/
             test-results/
-          if-no-files-found: ignore
+          if-no-files-found: error
           retention-days: 7
 
-      - name: Add report link to job summary
-        if: always() && steps.allure_artifact.outputs.artifact-url != ''
+      - name: Deploy report to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
+
+      - name: Add report links to job summary
         shell: bash
         run: |
           {
             echo "## Test report"
             echo
-            echo "[Download the Allure HTML report](${{ steps.allure_artifact.outputs.artifact-url }})"
-            echo
-            echo "Download and extract the artifact, then run \`npx allure open allure-report\`."
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Fail workflow when tests failed
-        if: always() && (steps.api_tests.outcome == 'failure' || steps.ui_tests.outcome == 'failure')
-        run: exit 1
-
-      - name: Destroy AWS infrastructure
-        if: always()
-        working-directory: terraform
-        run: terraform destroy -auto-approve
-
-  publish-report:
-    name: Publish Allure report
-    needs: deploy-test-destroy
-    if: always() && needs.deploy-test-destroy.outputs.pages_artifact_id != ''
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-
-    steps:
-      - name: Deploy report to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v5
-
-      - name: Add Pages link to job summary
-        shell: bash
-        run: |
-          {
-            echo "## Published Allure report"
-            echo
             echo "[Open the latest test report](${{ steps.deployment.outputs.page_url }})"
+            echo
+            echo "[Download the Allure HTML report](${{ steps.allure_artifact.outputs.artifact-url }})"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail workflow when tests or cleanup failed
+        if: needs.ui_tests.result == 'failure' || needs.api_tests.result == 'failure' || needs.terminate_infra.result == 'failure'
+        run: exit 1
