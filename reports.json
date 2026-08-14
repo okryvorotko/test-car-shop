@@ -1,5 +1,23 @@
 [
   {
+    "id": "run-12-attempt-1",
+    "runNumber": 12,
+    "runAttempt": 1,
+    "workflowName": "AWS deployment tests",
+    "createdAt": "2026-08-14T07:34:15.982Z",
+    "ref": "master",
+    "sha": "c77c2fc",
+    "workflowUrl": "https://github.com/okryvorotko/test-car-shop/actions/runs/31780104440",
+    "reportUrl": "reports/run-12-attempt-1/index.html",
+    "summary": {
+      "passed": 10,
+      "failed": 0,
+      "broken": 0,
+      "skipped": 1,
+      "unknown": 0
+    }
+  },
+  {
     "id": "run-11-attempt-1",
     "runNumber": 11,
     "runAttempt": 1,
