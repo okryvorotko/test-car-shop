@@ -47,6 +47,12 @@ the job summary. Download and extract the artifact into the repository, then
 serve it with `npm run report:allure:open` (Allure reports should be opened
 through its local web server). Reports are retained for seven days.
 
+To verify failure diagnostics, run the workflow manually and enable **Run one
+intentionally failing UI test to verify report artifacts**. The opt-in demo test
+fails on purpose and adds an assertion error, screenshot, video, Playwright
+trace, terminal/browser logs, and a text attachment to Allure. It is skipped by
+default, including on pushes to `master`.
+
 ## Temporary AWS environment
 
 The `AWS deployment tests` GitHub Actions workflow creates a temporary Ubuntu

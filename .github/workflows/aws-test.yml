@@ -7,6 +7,11 @@ on:
         description: car-shop-demo branch or tag
         required: true
         default: master
+      run_failure_demo:
+        description: Run one intentionally failing UI test to verify report artifacts
+        required: false
+        type: boolean
+        default: false
   push:
     branches: [master]
 
@@ -26,6 +31,7 @@ jobs:
       TF_VAR_aws_region: ${{ vars.AWS_REGION || 'us-east-1' }}
       TF_VAR_run_id: ${{ github.run_id }}-${{ github.run_attempt }}
       TF_VAR_app_ref: ${{ inputs.app_ref || 'master' }}
+      RUN_FAILURE_DEMO: ${{ inputs.run_failure_demo || 'false' }}
 
     steps:
       - name: Check out test framework
