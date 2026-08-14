@@ -43,9 +43,16 @@ npm run report:allure:open
 ```
 
 In GitHub Actions, open the completed workflow run and follow the report link in
-the job summary. Download and extract the artifact into the repository, then
-serve it with `npm run report:allure:open` (Allure reports should be opened
-through its local web server). Reports are retained for seven days.
+the **Publish Allure report** job summary to open the latest report directly on
+GitHub Pages. Each run is also retained as a downloadable artifact for seven
+days; extract that artifact into the repository and serve it with
+`npm run report:allure:open`.
+
+Before the first publication, set **Settings > Pages > Build and deployment >
+Source** to **GitHub Actions**. The Pages deployment replaces the site with the
+latest completed report. Be aware that Pages visibility depends on the GitHub
+plan and repository settings; failure screenshots and test details may be
+publicly accessible.
 
 To verify failure diagnostics, run the workflow manually and enable **Run one
 intentionally failing UI test to verify report artifacts**. The opt-in demo test
@@ -73,7 +80,9 @@ parameter from SSM and create, tag, describe, and delete EC2 instances,
 security groups, and EBS volumes.
 
 Run the workflow manually from **Actions > AWS deployment tests**, optionally
-choosing an application branch or tag. It also runs on pushes to `master`.
+choosing an application branch or tag. It does not run automatically on pushes.
+Infrastructure runs are serialized across the repository: if one run is already
+deploying or testing, the next run remains queued until teardown finishes.
 
 Terraform can also be used locally:
 

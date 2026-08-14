@@ -12,20 +12,22 @@ on:
         required: false
         type: boolean
         default: false
-  push:
-    branches: [master]
 
 permissions:
   contents: read
 
 concurrency:
-  group: aws-test-${{ github.ref }}
+  # Serialize every infrastructure run in this repository. A later run waits
+  # instead of touching AWS while an earlier Terraform state is still active.
+  group: aws-test-${{ github.repository }}
   cancel-in-progress: false
 
 jobs:
   deploy-test-destroy:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      pages_artifact_id: ${{ steps.pages_artifact.outputs.artifact_id }}
     env:
       TF_IN_AUTOMATION: "true"
       TF_VAR_aws_region: ${{ vars.AWS_REGION || 'us-east-1' }}
@@ -123,6 +125,14 @@ jobs:
         if: always() && steps.api_tests.outcome != 'skipped'
         run: npm run report:allure
 
+      - name: Upload report for GitHub Pages
+        id: pages_artifact
+        if: always() && hashFiles('allure-report/index.html') != ''
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: allure-report
+          retention-days: 1
+
       - name: Upload Allure report
         id: allure_artifact
         if: always() && steps.api_tests.outcome != 'skipped'
@@ -156,3 +166,30 @@ jobs:
         if: always()
         working-directory: terraform
         run: terraform destroy -auto-approve
+
+  publish-report:
+    name: Publish Allure report
+    needs: deploy-test-destroy
+    if: always() && needs.deploy-test-destroy.outputs.pages_artifact_id != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy report to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
+
+      - name: Add Pages link to job summary
+        shell: bash
+        run: |
+          {
+            echo "## Published Allure report"
+            echo
+            echo "[Open the latest test report](${{ steps.deployment.outputs.page_url }})"
+          } >> "$GITHUB_STEP_SUMMARY"
