@@ -4,3 +4,8 @@ node_modules/
 playwright-report/
 test-results/
 /test-results/
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log

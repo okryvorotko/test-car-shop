@@ -1,0 +1,102 @@
+name: AWS deployment tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_ref:
+        description: car-shop-demo branch or tag
+        required: true
+        default: master
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aws-test-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy-test-destroy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TF_IN_AUTOMATION: "true"
+      TF_VAR_aws_region: ${{ vars.AWS_REGION || 'us-east-1' }}
+      TF_VAR_run_id: ${{ github.run_id }}-${{ github.run_attempt }}
+      TF_VAR_app_ref: ${{ inputs.app_ref || 'master' }}
+
+    steps:
+      - name: Check out test framework
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.TF_VAR_aws_region }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Initialize Terraform
+        working-directory: terraform
+        run: terraform init
+
+      - name: Validate Terraform
+        working-directory: terraform
+        run: terraform validate
+
+      - name: Deploy application
+        working-directory: terraform
+        run: terraform apply -auto-approve
+
+      - name: Read deployment URLs
+        working-directory: terraform
+        run: |
+          echo "UI_BASE_URL=$(terraform output -raw ui_url)" >> "$GITHUB_ENV"
+          echo "API_BASE_URL=$(terraform output -raw api_url)" >> "$GITHUB_ENV"
+
+      - name: Wait for application
+        run: |
+          for attempt in {1..60}; do
+            if curl --fail --silent --show-error --max-time 5 "$API_BASE_URL/ping" >/dev/null && curl --fail --silent --show-error --max-time 5 "$UI_BASE_URL" >/dev/null; then
+              echo "Application is ready"
+              exit 0
+            fi
+            echo "Waiting for application ($attempt/60)..."
+            sleep 10
+          done
+          echo "Application did not become ready in 10 minutes" >&2
+          exit 1
+
+      - name: Install test dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run API and UI tests
+        env:
+          TEST_PASSWORD: ${{ secrets.TEST_PASSWORD || 'TestPassword123!' }}
+        run: npm test
+
+      - name: Upload Playwright diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results-${{ github.run_id }}
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Destroy AWS infrastructure
+        if: always()
+        working-directory: terraform
+        run: terraform destroy -auto-approve
