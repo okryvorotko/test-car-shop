@@ -108,7 +108,7 @@ jobs:
 
   ui_tests:
     name: Running UI tests
-    needs: prepare_infra
+    needs: [prepare_infra, api_tests]
     runs-on: ubuntu-latest
     timeout-minutes: 15
 

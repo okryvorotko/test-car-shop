@@ -8,6 +8,7 @@ export default defineConfig({
     timeout: 7_500
   },
   fullyParallel: false,
+  workers: 1,
   reporter: [
     ["list"],
     ["allure-playwright", { resultsDir: "allure-results" }]
