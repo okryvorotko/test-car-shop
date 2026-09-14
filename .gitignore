@@ -12,3 +12,7 @@ test-results/
 *.tfplan
 crash.log
 .npm-cache/
+.video-tools
+.video-tools-offline
+video-build*
+.terraform.lock.hcl

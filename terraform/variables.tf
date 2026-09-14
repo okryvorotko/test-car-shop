@@ -37,3 +37,13 @@ variable "run_id" {
     error_message = "run_id may contain only letters, digits, dots, underscores, and hyphens."
   }
 }
+
+variable "allowed_cidr" {
+  description = "IPv4 CIDR allowed to reach the QA application."
+  type        = string
+
+  validation {
+    condition     = can(cidrnetmask(var.allowed_cidr))
+    error_message = "allowed_cidr must be valid IPv4 CIDR notation."
+  }
+}
