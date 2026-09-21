@@ -1,20 +1,11 @@
 import { expect, test } from "@playwright/test";
 import { api } from "../../src/api/carShopClient.js";
-import { cleanupDemoData } from "../../src/api/testLifecycle.js";
 import { carCatalog } from "../../src/data/cars.js";
 import { uniqueUser } from "../../src/fixtures/users.js";
 import { CarDetailsPage } from "../../src/ui/CarDetailsPage.js";
 import { CarsPage } from "../../src/ui/CarsPage.js";
 import { CartPage } from "../../src/ui/CartPage.js";
 import { RegisterPage } from "../../src/ui/RegisterPage.js";
-
-test.beforeEach(async () => {
-  await cleanupDemoData();
-});
-
-test.afterEach(async () => {
-  await cleanupDemoData();
-});
 
 test("new user can register, browse cars, add to cart, and buy", async ({ page }) => {
   const user = uniqueUser("ui-user");

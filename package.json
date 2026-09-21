@@ -1,7 +1,7 @@
 {
   "name": "test-car-shop",
   "version": "1.0.0",
-  "description": "API and UI automation framework for car-shop-demo.",
+  "description": "Portfolio API and UI automation framework for car-shop-demo.",
   "type": "module",
   "scripts": {
     "test": "npm run test:api && npm run test:ui",
@@ -17,15 +17,21 @@
     "api-testing",
     "playwright",
     "mocha",
+    "allure",
+    "github-actions",
+    "terraform",
     "car-shop-demo"
   ],
-  "author": "",
+  "author": "Oleksandr Kryvorotko",
   "license": "MIT",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
   "devDependencies": {
     "@playwright/test": "^1.56.0",
     "allure-commandline": "^2.43.0",
     "allure-mocha": "^3.10.2",
     "allure-playwright": "^3.10.2",
-    "mocha": "^11.7.4"
+    "mocha": "^12.0.2"
   }
 }
