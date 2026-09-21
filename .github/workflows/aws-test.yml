@@ -34,7 +34,7 @@ env:
 jobs:
   test_on_aws:
     name: Deploy, test, and destroy
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 35
     outputs:
       tests_outcome: ${{ steps.tests.outcome }}
@@ -172,7 +172,7 @@ jobs:
       always() &&
       needs.test_on_aws.outputs.tests_outcome != '' &&
       needs.test_on_aws.outputs.tests_outcome != 'skipped'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: write

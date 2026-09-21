@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const [reportSource, resultsSource, pagesRoot] = process.argv.slice(2).map((value) => resolve(value));
@@ -39,7 +39,25 @@ reports.unshift({
   summary
 });
 
-writeFileSync(historyPath, `${JSON.stringify(reports, null, 2)}\n`);
+const successfulReports = reports
+  .filter((report) => report.summary.failed + report.summary.broken === 0)
+  .slice(0, 3);
+const latestFailedReport = reports.find(
+  (report) => report.summary.failed + report.summary.broken > 0
+);
+const retainedReportIds = new Set([
+  ...successfulReports.map((report) => report.id),
+  ...(latestFailedReport ? [latestFailedReport.id] : [])
+]);
+const retainedReports = reports.filter((report) => retainedReportIds.has(report.id));
+
+for (const name of readdirSync(join(pagesRoot, "reports"))) {
+  if (name.startsWith("run-") && !retainedReportIds.has(name)) {
+    rmSync(join(pagesRoot, "reports", name), { recursive: true, force: true });
+  }
+}
+
+writeFileSync(historyPath, `${JSON.stringify(retainedReports, null, 2)}\n`);
 
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({
   "&": "&amp;",
@@ -49,7 +67,7 @@ const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (character
   "'": "&#39;"
 })[character]);
 
-const cards = reports.map((report) => {
+const cards = retainedReports.map((report) => {
   const { passed, failed, broken, skipped, unknown } = report.summary;
   const outcome = failed + broken > 0 ? "failed" : "passed";
   const date = new Date(report.createdAt).toLocaleString("en-US", {
@@ -101,7 +119,7 @@ writeFileSync(join(pagesRoot, "index.html"), `<!doctype html>
   </style>
 </head>
 <body>
-  <header><h1>Car Shop test reports</h1><p>Each run is preserved. Select a run to open its complete Allure report.</p></header>
+  <header><h1>Car Shop test reports</h1><p>The latest three successful runs and latest failed run are retained. Select a run to open its complete Allure report.</p></header>
   <main>${cards || "<p>No reports have been published yet.</p>"}</main>
 </body>
 </html>\n`);
