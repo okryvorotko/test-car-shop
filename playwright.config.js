@@ -7,8 +7,10 @@ export default defineConfig({
   expect: {
     timeout: 7_500
   },
-  fullyParallel: false,
-  workers: 1,
+  fullyParallel: true,
+  workers: 2,
+  globalSetup: "./src/ui/globalSetup.js",
+  globalTeardown: "./src/ui/globalTeardown.js",
   reporter: [
     ["list"],
     ["allure-playwright", { resultsDir: "allure-results" }]

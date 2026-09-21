@@ -17,25 +17,27 @@ permissions:
   contents: read
 
 concurrency:
-  # Serialize infrastructure runs because Terraform state is passed between jobs.
   group: aws-test-${{ github.repository }}
   cancel-in-progress: false
 
 env:
   TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
   TF_VAR_aws_region: ${{ vars.AWS_REGION || 'us-east-1' }}
   TF_VAR_run_id: ${{ github.run_id }}-${{ github.run_attempt }}
   TF_VAR_app_ref: ${{ inputs.app_ref || 'master' }}
+  TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+  TF_STATE_REGION: ${{ vars.TF_STATE_REGION || 'us-east-1' }}
+  TF_STATE_KEY: test-car-shop/runs/${{ github.run_id }}-${{ github.run_attempt }}/terraform.tfstate
   RUN_FAILURE_DEMO: ${{ inputs.run_failure_demo || 'false' }}
 
 jobs:
-  prepare_infra:
-    name: Prepare infra
+  test_on_aws:
+    name: Deploy, test, and destroy
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     outputs:
-      ui_base_url: ${{ steps.urls.outputs.ui_base_url }}
-      api_base_url: ${{ steps.urls.outputs.api_base_url }}
+      tests_outcome: ${{ steps.tests.outcome }}
 
     steps:
       - name: Check out test framework
@@ -53,9 +55,44 @@ jobs:
         with:
           terraform_wrapper: false
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20.19.0
+          cache: npm
+
+      - name: Install test dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Set Terraform runtime values
+        shell: bash
+        run: |
+          if [ -z "$TF_STATE_BUCKET" ]; then
+            echo "Repository variable TF_STATE_BUCKET is required." >&2
+            exit 1
+          fi
+
+          runner_ip="$(curl --fail --silent --show-error https://checkip.amazonaws.com | tr -d '[:space:]')"
+          if ! [[ "$runner_ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+            echo "Could not determine a valid runner IPv4 address." >&2
+            exit 1
+          fi
+
+          echo "TF_VAR_allowed_cidr=${runner_ip}/32" >> "$GITHUB_ENV"
+          echo "TF_VAR_expires_at=$(date -u -d '+4 hours' '+%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_ENV"
+
       - name: Initialize Terraform
+        id: init
         working-directory: terraform
-        run: terraform init
+        run: |
+          terraform init -reconfigure \
+            -backend-config="bucket=$TF_STATE_BUCKET" \
+            -backend-config="key=$TF_STATE_KEY" \
+            -backend-config="region=$TF_STATE_REGION" \
+            -backend-config="use_lockfile=true"
 
       - name: Validate Terraform
         working-directory: terraform
@@ -67,32 +104,23 @@ jobs:
         working-directory: terraform
         run: terraform apply -auto-approve
 
-      - name: Save deployment URLs
-        id: urls
+      - name: Read deployment URLs
         if: steps.deploy.outcome == 'success'
         working-directory: terraform
         shell: bash
         run: |
-          echo "ui_base_url=$(terraform output -raw ui_url)" >> "$GITHUB_OUTPUT"
-          echo "api_base_url=$(terraform output -raw api_url)" >> "$GITHUB_OUTPUT"
-
-      - name: Upload Terraform state
-        if: always() && hashFiles('terraform/terraform.tfstate') != ''
-        uses: actions/upload-artifact@v6
-        with:
-          name: terraform-state-${{ github.run_id }}
-          path: terraform/terraform.tfstate
-          if-no-files-found: error
-          retention-days: 1
+          echo "UI_BASE_URL=$(terraform output -raw ui_url)" >> "$GITHUB_ENV"
+          echo "API_BASE_URL=$(terraform output -raw api_url)" >> "$GITHUB_ENV"
 
       - name: Wait for application
+        id: readiness
         if: steps.deploy.outcome == 'success'
-        env:
-          UI_BASE_URL: ${{ steps.urls.outputs.ui_base_url }}
-          API_BASE_URL: ${{ steps.urls.outputs.api_base_url }}
+        continue-on-error: true
+        shell: bash
         run: |
           for attempt in {1..60}; do
-            if curl --fail --silent --show-error --max-time 5 "$API_BASE_URL/ping" >/dev/null && curl --fail --silent --show-error --max-time 5 "$UI_BASE_URL" >/dev/null; then
+            if curl --fail --silent --show-error --max-time 5 "$API_BASE_URL/ping" >/dev/null \
+              && curl --fail --silent --show-error --max-time 5 "$UI_BASE_URL" >/dev/null; then
               echo "Application is ready"
               exit 0
             fi
@@ -102,136 +130,48 @@ jobs:
           echo "Application did not become ready in 10 minutes" >&2
           exit 1
 
-      - name: Fail when deployment failed
-        if: steps.deploy.outcome == 'failure'
-        run: exit 1
-
-  ui_tests:
-    name: Running UI tests
-    needs: [prepare_infra, api_tests]
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    steps:
-      - name: Check out test framework
-        uses: actions/checkout@v5
-
-      - name: Install test dependencies
-        run: npm ci
-
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
-
-      - name: Run UI tests
+      - name: Run API and UI tests
         id: tests
+        if: steps.readiness.outcome == 'success'
         continue-on-error: true
         env:
-          UI_BASE_URL: ${{ needs.prepare_infra.outputs.ui_base_url }}
-          API_BASE_URL: ${{ needs.prepare_infra.outputs.api_base_url }}
           TEST_PASSWORD: ${{ secrets.TEST_PASSWORD || 'TestPassword123!' }}
-        run: npm run test:ui
+        run: npm test
 
-      - name: Upload UI test results
+      - name: Upload raw test results
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: ui-test-results-${{ github.run_id }}
+          name: aws-test-results-${{ github.run_id }}
           path: |
             allure-results/
             test-results/
           if-no-files-found: ignore
           retention-days: 1
 
-      - name: Fail job when UI tests failed
-        if: steps.tests.outcome == 'failure'
-        run: exit 1
-
-  api_tests:
-    name: Running API tests
-    needs: prepare_infra
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: Check out test framework
-        uses: actions/checkout@v5
-
-      - name: Install test dependencies
-        run: npm ci
-
-      - name: Run API tests
-        id: tests
-        continue-on-error: true
-        env:
-          UI_BASE_URL: ${{ needs.prepare_infra.outputs.ui_base_url }}
-          API_BASE_URL: ${{ needs.prepare_infra.outputs.api_base_url }}
-          TEST_PASSWORD: ${{ secrets.TEST_PASSWORD || 'TestPassword123!' }}
-        run: npm run test:api
-
-      - name: Upload API test results
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: api-test-results-${{ github.run_id }}
-          path: allure-results/
-          if-no-files-found: ignore
-          retention-days: 1
-
-      - name: Fail job when API tests failed
-        if: steps.tests.outcome == 'failure'
-        run: exit 1
-
-  terminate_infra:
-    name: Terminate infra
-    needs: [prepare_infra, ui_tests, api_tests]
-    if: always() && needs.prepare_infra.result != 'skipped'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: Check out test framework
-        uses: actions/checkout@v5
-
-      - name: Download Terraform state
-        id: state
-        continue-on-error: true
-        uses: actions/download-artifact@v6
-        with:
-          name: terraform-state-${{ github.run_id }}
-          path: terraform
-
-      - name: Configure AWS credentials
-        if: steps.state.outcome == 'success'
-        uses: aws-actions/configure-aws-credentials@v6
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.TF_VAR_aws_region }}
-
-      - name: Set up Terraform
-        if: steps.state.outcome == 'success'
-        uses: hashicorp/setup-terraform@v4
-        with:
-          terraform_wrapper: false
-
-      - name: Initialize Terraform
-        if: steps.state.outcome == 'success'
-        working-directory: terraform
-        run: terraform init
-
       - name: Destroy AWS infrastructure
-        if: steps.state.outcome == 'success'
+        id: destroy
+        if: always() && steps.init.outcome == 'success'
+        continue-on-error: true
         working-directory: terraform
         run: terraform destroy -auto-approve
 
-      - name: Fail when Terraform state is unavailable
-        if: steps.state.outcome == 'failure' && needs.prepare_infra.result == 'success'
+      - name: Fail when deployment, readiness, tests, or teardown failed
+        if: >-
+          always() &&
+          (steps.deploy.outcome == 'failure' ||
+          steps.readiness.outcome == 'failure' ||
+          steps.tests.outcome == 'failure' ||
+          steps.destroy.outcome == 'failure')
         run: exit 1
 
   generate_report:
     name: Generate report
-    needs: [prepare_infra, ui_tests, api_tests, terminate_infra]
-    if: always() && (needs.ui_tests.result != 'skipped' || needs.api_tests.result != 'skipped')
+    needs: test_on_aws
+    if: >-
+      always() &&
+      needs.test_on_aws.outputs.tests_outcome != '' &&
+      needs.test_on_aws.outputs.tests_outcome != 'skipped'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -246,6 +186,12 @@ jobs:
       - name: Check out test framework
         uses: actions/checkout@v5
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20.19.0
+          cache: npm
+
       - name: Install test dependencies
         run: npm ci
 
@@ -258,20 +204,16 @@ jobs:
       - name: Download test results
         uses: actions/download-artifact@v6
         with:
-          pattern: '*-test-results-${{ github.run_id }}'
+          name: aws-test-results-${{ github.run_id }}
           path: downloaded-results
-          merge-multiple: false
 
-      - name: Merge Allure results
+      - name: Prepare Allure results
         shell: bash
         run: |
           mkdir -p allure-results test-results
-          find downloaded-results -type f -path '*/allure-results/*' -exec cp {} allure-results/ \;
-          if [ -d "downloaded-results/api-test-results-${{ github.run_id }}" ]; then
-            find "downloaded-results/api-test-results-${{ github.run_id }}" -maxdepth 1 -type f -exec cp {} allure-results/ \;
-          fi
-          if find downloaded-results -type f -path '*/test-results/*' -print -quit | grep -q .; then
-            cp -R downloaded-results/ui-test-results-${{ github.run_id }}/test-results/. test-results/
+          cp -R downloaded-results/allure-results/. allure-results/
+          if [ -d downloaded-results/test-results ]; then
+            cp -R downloaded-results/test-results/. test-results/
           fi
           {
             echo "Application.ref=$TF_VAR_app_ref"

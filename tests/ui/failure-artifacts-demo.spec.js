@@ -1,6 +1,5 @@
 import { expect, test } from "@playwright/test";
 import { api } from "../../src/api/carShopClient.js";
-import { cleanupDemoData } from "../../src/api/testLifecycle.js";
 import { carCatalog } from "../../src/data/cars.js";
 import { uniqueUser } from "../../src/fixtures/users.js";
 import { CarDetailsPage } from "../../src/ui/CarDetailsPage.js";
@@ -12,14 +11,6 @@ test.skip(
   process.env.RUN_FAILURE_DEMO !== "true",
   "Enable RUN_FAILURE_DEMO to exercise failure-report artifacts."
 );
-
-test.beforeEach(async () => {
-  await cleanupDemoData();
-});
-
-test.afterEach(async () => {
-  await cleanupDemoData();
-});
 
 test("failure demo captures diagnostics for the Allure report", async ({ page }, testInfo) => {
   const browserLogs = [];

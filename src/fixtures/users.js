@@ -1,7 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { config } from "../utils/config.js";
 
 export function uniqueUser(prefix = "qa-user") {
-  const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const id = randomUUID();
 
   return {
     username: `${prefix}-${id}`,
