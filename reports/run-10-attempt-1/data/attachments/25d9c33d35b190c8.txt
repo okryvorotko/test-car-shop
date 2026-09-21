@@ -1,6 +1,0 @@
-This failure is intentional.
-Page URL: http://54.242.82.25:3000/cart
-Browser console entries: 3
-[browser:debug] [vite] connecting...
-[browser:debug] [vite] connected.
-[browser:info] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
