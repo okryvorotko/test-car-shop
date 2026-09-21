@@ -15,4 +15,3 @@ crash.log
 .video-tools
 .video-tools-offline
 video-build*
-.terraform.lock.hcl

@@ -47,3 +47,9 @@ variable "allowed_cidr" {
     error_message = "allowed_cidr must be valid IPv4 CIDR notation."
   }
 }
+
+variable "expires_at" {
+  description = "UTC expiration timestamp used by orphan cleanup automation."
+  type        = string
+}
+

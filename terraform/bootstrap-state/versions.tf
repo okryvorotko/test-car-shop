@@ -1,8 +1,6 @@
 terraform {
   required_version = ">= 1.6.0"
 
-  backend "s3" {}
-
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -18,10 +16,8 @@ provider "aws" {
     tags = {
       Project     = "test-car-shop"
       ManagedBy   = "terraform"
-      RunId       = var.run_id
-      Environment = "ephemeral-qa"
+      Environment = "infrastructure"
       Owner       = "qa-automation-lab"
-      ExpiresAt   = var.expires_at
     }
   }
 }
