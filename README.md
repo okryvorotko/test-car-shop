@@ -153,6 +153,16 @@ tests/api          Mocha API specs
 tests/ui           Playwright UI specs and opt-in diagnostics demo
 ```
 
+## AI-assisted engineering curriculum
+
+The [AI engineering lab](ai-engineering/README.md) contains a 28-lab curriculum,
+an offline test-oracle challenge, task/evidence templates, and staged exercises
+for production-like failures. AI-assisted tests and evaluation assets live in
+this repository; application changes belong in `car-shop-demo`.
+
+Start with `node ai-engineering/starter/evaluate.mjs`.
+
+
 ## License
 
 This project is available under the [MIT License](LICENSE).
